@@ -1,0 +1,44 @@
+mpc-sdk
+Copyright (c) 2025-2026 Vadym Didenko
+
+Unless stated otherwise below, this repository is licensed under the
+Apache License, Version 2.0 (see LICENSE).
+
+--------------------------------------------------------------------------------
+Third-party code under the Silence Laboratories License Agreement (SLL)
+--------------------------------------------------------------------------------
+
+The following directory contains code derived from Silence Laboratories'
+silent-shard-dkls23-ll (https://github.com/silence-laboratories/silent-shard-dkls23-ll):
+
+  internal/rust/core/   (crate dkls23-ll - DKLs23 threshold ECDSA)
+
+  silent-shard-dkls23-ll is licensed under the Silence Laboratories License
+  Agreement, Copyright © Silence Laboratories Pte. Ltd. All Rights Reserved.
+
+This directory is NOT covered by the Apache License. It is distributed under
+the Silence Laboratories Non-Commercial Use License Agreement, whose full text,
+conditions and disclaimer are in internal/rust/core/LICENSE.md. The SLL
+permits NON-COMMERCIAL USE ONLY; any commercial use requires a separate
+Commercial Use License from Silence Laboratories (info@silencelaboratories.com).
+
+The crates also depend on sl-mpc-mate and sl-oblivious from
+https://github.com/silence-laboratories/sl-crypto, which are licensed under the
+same SLL.
+
+Modified files and the nature of the modifications are listed in
+internal/rust/core/MODIFICATIONS.md.
+
+Consequence for binaries: any build that links dkls23-ll (for example
+libmpc_dkls23_ffi and the Go packages pkg/dkls23, pkg/threshold, pkg/sdk and
+pkg/mobile) contains SLL-licensed code and is subject to the SLL
+non-commercial restriction, even though the wrapper code itself is Apache-2.0.
+The FROST (Ed25519) stack and the chain adapters do not link dkls23-ll.
+
+--------------------------------------------------------------------------------
+Other third-party dependencies
+--------------------------------------------------------------------------------
+
+frost-ed25519 (Zcash Foundation) - MIT OR Apache-2.0
+Go and Rust dependencies are listed in go.mod and internal/rust/Cargo.lock
+with their own licenses.

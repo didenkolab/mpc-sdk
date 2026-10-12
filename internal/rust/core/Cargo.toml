@@ -1,0 +1,33 @@
+[package]
+name = "dkls23-ll"
+license-file = "LICENSE.md"
+version = "1.0.3"
+edition = "2021"
+publish = false
+
+[dependencies]
+sl-mpc-mate = { workspace = true, features = ["serde"] }
+sl-oblivious = { workspace = true, features = ["serde"] }
+sha2.workspace = true
+k256 = { workspace = true, features = ["ecdsa", "serde"] }
+merlin.workspace = true
+rand.workspace = true
+thiserror.workspace = true
+derivation-path.workspace = true
+zeroize.workspace = true
+serde = "1"
+bytemuck = { version = "1.14.1", features = [
+    "derive",
+    "min_const_generics",
+    "extern_crate_alloc",
+] }
+hex = "0.4.3"
+
+[dev-dependencies]
+serde_json = "1"
+ciborium = "0.2.1"
+bincode = { version = "2.0.0-rc.3", features = ["serde"] }
+
+[profile.release]
+lto = true
+opt-level = 'z'

@@ -1,0 +1,39 @@
+# Keyshares - NEVER commit private keys!
+**/data/wallet_*_keyshare.json
+*.keyshare.json
+
+# Build artifacts
+**/target/
+*.dll
+*.so
+*.dylib
+*.exe
+*.a
+bin/
+.secrets/
+
+# Go
+*.test
+*.out
+vendor/
+
+# IDE
+.idea
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Coverage
+coverage.out
+coverage.html
+
+# Cargo config (local build settings)
+.cargo/config.toml
