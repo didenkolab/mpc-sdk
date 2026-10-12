@@ -11,7 +11,7 @@ require (
 	github.com/btcsuite/btcutil v1.0.2
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.0.1
 	github.com/ethereum/go-ethereum v1.13.14
-	github.com/mr-tron/base58 v1.2.0
+	github.com/mr-tron/base58 v1.3.0
 	golang.org/x/crypto v0.44.0
 )
 
