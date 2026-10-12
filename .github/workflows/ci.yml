@@ -59,7 +59,7 @@ jobs:
         run: go test -race -coverprofile=coverage.out ./pkg/...
       - name: Run all examples
         run: examples/run-all.sh
-      - uses: codecov/codecov-action@v5
+      - uses: codecov/codecov-action@v7
         with:
           files: coverage.out
           token: ${{ secrets.CODECOV_TOKEN }}
