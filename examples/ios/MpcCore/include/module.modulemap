@@ -1,0 +1,5 @@
+module MpcCore {
+    umbrella header "MpcCore.h"
+    export *
+    module * { export * }
+}

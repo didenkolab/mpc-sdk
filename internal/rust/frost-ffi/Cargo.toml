@@ -1,0 +1,18 @@
+[package]
+name = "frost-ffi"
+version = "1.0.0"
+license = "Apache-2.0"
+edition = "2021"
+publish = false
+
+[lib]
+name = "mpc_frost_ffi"
+# rlib lets the integration tests in tests/ call the C ABI directly.
+crate-type = ["staticlib", "cdylib"]
+
+[dependencies]
+frost-ed25519 = { version = "2.2.0", features = ["serialization"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+rand = "0.8"
+hex = "0.4"
