@@ -89,7 +89,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: internal/rust
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: 17
