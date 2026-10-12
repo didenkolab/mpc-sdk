@@ -1,0 +1,15 @@
+# Extends the default gitleaks rules. The allowlist only covers public values
+# that the generic-api-key rule mistakes for secrets.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Public keys used as test vectors and in example output"
+regexTarget = "line"
+regexes = [
+  # secp256k1 generator G and 2G (public keys of private keys 1 and 2)
+  '''0[24]79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798''',
+  '''02c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5''',
+  # NEAR ed25519 public keys (base58)
+  '''ed25519:[1-9A-HJ-NP-Za-km-z]{43,44}''',
+]

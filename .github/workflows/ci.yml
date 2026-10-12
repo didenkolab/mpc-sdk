@@ -1,0 +1,121 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: golangci/golangci-lint-action@v8
+        with:
+          version: v2.12
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: internal/rust
+      - name: cargo fmt
+        working-directory: internal/rust
+        run: cargo fmt --check -p dkls23-ffi -p frost-ffi
+      - name: cargo clippy
+        working-directory: internal/rust
+        run: cargo clippy --locked -p dkls23-ffi -p frost-ffi --all-targets -- -D warnings
+
+  rust:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: internal/rust
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: internal/rust
+      - run: cargo test --locked --release -p dkls23-ll -p dkls23-ffi -p frost-ffi
+
+  go:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: internal/rust
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Build FFI libraries
+        run: make build-ffi
+      - name: Go tests
+        env:
+          LD_LIBRARY_PATH: ${{ github.workspace }}/internal/rust/target/release
+        run: go test -race -coverprofile=coverage.out ./pkg/...
+      - name: Run all examples
+        run: examples/run-all.sh
+      - uses: codecov/codecov-action@v5
+        with:
+          files: coverage.out
+          token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: false
+
+  ios-example:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: internal/rust
+      - name: Build MpcCore.xcframework
+        run: examples/ios/build_xcframework.sh
+      - name: Test on simulator
+        working-directory: examples/ios
+        run: |
+          SIM=$(xcrun simctl list devices available | grep -m1 -E 'iPhone' | sed -E 's/.*\(([0-9A-F-]{36})\).*/\1/')
+          xcodebuild test -project MpcDemo.xcodeproj -scheme MpcDemo -destination "id=$SIM"
+
+  android-example:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Free disk space for the emulator image
+        run: sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL /usr/local/share/boost
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: internal/rust
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - name: Build Rust FFI for Android
+        run: ANDROID_NDK_HOME="$ANDROID_NDK_LATEST_HOME" tools/mobile/build_rust_mobile.sh android
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Instrumented tests on emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          arch: x86_64
+          target: google_apis
+          disk-size: 4096M
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -no-metrics
+          working-directory: examples/android
+          script: ./gradlew --no-daemon connectedDebugAndroidTest
+
+  secrets:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Scan full history with gitleaks
+        run: docker run --rm -v "$PWD:/repo" zricethezav/gitleaks:v8.24.3 detect --source /repo --redact -v
