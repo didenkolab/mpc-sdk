@@ -1,0 +1,1 @@
+[{"from":1,"to_id":1,"package":{"header":{"version":0,"ciphersuite":"FROST-ED25519-SHA512-v1"},"signing_share":"4fba1a70b2932fd201a6d610165256dfbf93a0692e5e6efb7082d2e1488a5406"}},{"from":1,"to_id":2,"package":{"header":{"version":0,"ciphersuite":"FROST-ED25519-SHA512-v1"},"signing_share":"da8518cd5b1973a3c816fc7c74e46d5eb584fa6ab9fd398cfe885f1f2eda890b"}}]

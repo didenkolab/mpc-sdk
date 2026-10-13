@@ -1,12 +1,12 @@
 package dkls23
 
-// #cgo windows LDFLAGS: -L../../internal/rust/target/x86_64-pc-windows-gnu/release -static -Wl,--allow-multiple-definition -lmpc_dkls23_ffi -lws2_32 -luserenv -lbcrypt -lntdll
-// #cgo linux LDFLAGS: -L../../ -L../../internal/rust/target/release -Wl,--start-group -lmpc_dkls23_ffi -Wl,--end-group -lpthread -ldl -lm
-// #cgo darwin,!ios LDFLAGS: -L../../ -L../../internal/rust/target/release -lmpc_dkls23_ffi -framework Security
-// #cgo darwin,ios LDFLAGS: -L../../internal/rust/target/ios-universal -lmpc_dkls23_ffi -framework Security
-// #cgo android,arm64 LDFLAGS: -L../../internal/rust/target/aarch64-linux-android/release -lmpc_dkls23_ffi -llog -ldl -lm
-// #cgo android,amd64 LDFLAGS: -L../../internal/rust/target/x86_64-linux-android/release -lmpc_dkls23_ffi -llog -ldl -lm
-// #cgo android,arm LDFLAGS: -L../../internal/rust/target/armv7-linux-androideabi/release -lmpc_dkls23_ffi -llog -ldl -lm
+// #cgo windows LDFLAGS: -L${SRCDIR}/../../internal/rust/target/x86_64-pc-windows-gnu/release -static -Wl,--allow-multiple-definition -lmpc_dkls23_ffi -lws2_32 -luserenv -lbcrypt -lntdll
+// #cgo linux LDFLAGS: -L${SRCDIR}/../../internal/rust/target/release -Wl,--start-group -lmpc_dkls23_ffi -Wl,--end-group -lpthread -ldl -lm
+// #cgo darwin,!ios LDFLAGS: -L${SRCDIR}/../../internal/rust/target/release -lmpc_dkls23_ffi -framework Security
+// #cgo darwin,ios LDFLAGS: -L${SRCDIR}/../../internal/rust/target/ios-universal -lmpc_dkls23_ffi -framework Security
+// #cgo android,arm64 LDFLAGS: -L${SRCDIR}/../../internal/rust/target/aarch64-linux-android/release -lmpc_dkls23_ffi -llog -ldl -lm
+// #cgo android,amd64 LDFLAGS: -L${SRCDIR}/../../internal/rust/target/x86_64-linux-android/release -lmpc_dkls23_ffi -llog -ldl -lm
+// #cgo android,arm LDFLAGS: -L${SRCDIR}/../../internal/rust/target/armv7-linux-androideabi/release -lmpc_dkls23_ffi -llog -ldl -lm
 // #include <stdlib.h>
 //
 // typedef void* DkgState;

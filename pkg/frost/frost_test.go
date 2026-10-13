@@ -616,12 +616,21 @@ func TestVerifySignatureErrors(t *testing.T) {
 func TestKeyDerivation(t *testing.T) {
 	keyshares := runDKG(t, 2, 2)
 
-	derived, err := DeriveKeyshare(keyshares[0], "m/0")
+	derived, err := DeriveKeyshare(keyshares[0], "m")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !groupPublicKey(t, derived).Equal(groupPublicKey(t, keyshares[0])) {
-		t.Error("derived keyshare has a different group key")
+		t.Error("root keyshare has a different group key")
+	}
+	// Child paths are refused instead of silently returning the root key.
+	for _, path := range []string{"m/0", "m/44'/501'/0'/0'"} {
+		if _, err := DeriveKeyshare(keyshares[0], path); !errors.Is(err, ErrFFICall) {
+			t.Errorf("DeriveKeyshare(%q): got %v, want ErrFFICall", path, err)
+		}
+		if _, err := DerivePublicKey(keyshares[0], path); !errors.Is(err, ErrFFICall) {
+			t.Errorf("DerivePublicKey(%q): got %v, want ErrFFICall", path, err)
+		}
 	}
 
 	for name, fn := range map[string]func(string, string) (string, error){

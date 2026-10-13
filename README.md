@@ -5,7 +5,6 @@
 **Threshold signatures (MPC) for wallets — DKLs23 ECDSA + FROST Ed25519**
 
 [![CI](https://github.com/didenkolab/mpc-sdk/actions/workflows/ci.yml/badge.svg)](https://github.com/didenkolab/mpc-sdk/actions/workflows/ci.yml)
-[![codecov](https://codecov.io/gh/didenkolab/mpc-sdk/graph/badge.svg)](https://codecov.io/gh/didenkolab/mpc-sdk)
 [![License](https://img.shields.io/badge/license-Apache--2.0%20%2B%20SLL%20core-blue)](#licensing--read-first)
 [![Go](https://img.shields.io/badge/Go-1.25+-00ADD8?logo=go&logoColor=white)](go.mod)
 [![Rust](https://img.shields.io/badge/Rust-1.88-000000?logo=rust&logoColor=white)](rust-toolchain.toml)
@@ -124,13 +123,21 @@ examples/run-all.sh                 # all of them
 
 Every example verifies its signatures with an independent implementation. Chain
 inputs (UTXOs, nonces, block hashes) are placeholders, so the transactions are
-not broadcastable as-is.
+not broadcastable as-is; [examples/testnet](examples/testnet) signs real
+testnet transactions with live chain data.
+
+**Not yet supported:** Cosmos transactions (`pkg/chain/cosmos` builds a JSON
+sign document, not the protobuf `SIGN_MODE_DIRECT` one — address derivation
+works), Ed25519 child key derivation for FROST, key refresh and share recovery,
+and distributed signing in `pkg/threshold` (key generation is distributed;
+signing over a network uses the round functions in `pkg/sdk`).
 
 Mobile: [examples/ios](examples/ios) (Swift) and [examples/android](examples/android) (Kotlin + JNI).
 
 ## Security cautions
 
-- Presignatures are single-use; enforce this at the storage layer.
+- Presignatures are single-use handles held in memory by the native library and
+  are lost on restart (fail closed); never try to persist them.
 - Hash messages with the chain's algorithm before signing; never sign raw client input.
 - Authenticate and encrypt protocol messages between parties.
 - Encrypt key shares at rest and never export them.

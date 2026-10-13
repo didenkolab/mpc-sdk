@@ -389,3 +389,18 @@ func TestSignAndRecoverSender(t *testing.T) {
 		t.Fatal("expected error for negative token amount")
 	}
 }
+
+func TestBuildersRejectInvalidRecipient(t *testing.T) {
+	for _, to := range []string{
+		"0x7E5F4552091A69125d5DfCb7b8C2659029395Bd",  // one hex digit missing
+		"0x7e5F4552091A69125d5DfCb7b8C2659029395Bdf", // bad EIP-55 checksum
+		"7E5F4552091A69125d5DfCb7b8C2659029395Bdf",   // no 0x prefix
+	} {
+		if _, _, _, err := BuildLegacyTx(LegacyTxInput{To: to, Value: big.NewInt(1), GasPrice: big.NewInt(1), GasLimit: 21000}); err == nil {
+			t.Errorf("BuildLegacyTx accepted recipient %q", to)
+		}
+		if _, _, _, err := BuildEIP1559Tx(EIP1559TxInput{To: to, Value: big.NewInt(1), MaxFeePerGas: big.NewInt(2), MaxPriorityFeePerGas: big.NewInt(1), GasLimit: 21000}); err == nil {
+			t.Errorf("BuildEIP1559Tx accepted recipient %q", to)
+		}
+	}
+}

@@ -299,3 +299,33 @@ func TestHexHash(t *testing.T) {
 		t.Fatalf("got %s, want %s", got, want)
 	}
 }
+
+func TestParseAddress(t *testing.T) {
+	const checksummed = "0x7E5F4552091A69125d5DfCb7b8C2659029395Bdf"
+	tests := []struct {
+		name    string
+		in      string
+		wantErr bool
+	}{
+		{"checksummed", checksummed, false},
+		{"lower case", strings.ToLower(checksummed), false},
+		{"upper case body", "0x" + strings.ToUpper(checksummed[2:]), false},
+		{"bad checksum", "0x7e5F4552091A69125d5DfCb7b8C2659029395Bdf", true},
+		{"missing 0x", checksummed[2:], true},
+		{"too short", checksummed[:40], true},
+		{"too long", checksummed + "00", true},
+		{"not hex", "0x" + strings.Repeat("zz", 20), true},
+		{"empty", "", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			addr, err := ParseAddress(tt.in)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("ParseAddress(%q) error = %v, wantErr %v", tt.in, err, tt.wantErr)
+			}
+			if err == nil && addr.Hex() != checksummed {
+				t.Fatalf("ParseAddress(%q) = %s, want %s", tt.in, addr.Hex(), checksummed)
+			}
+		})
+	}
+}

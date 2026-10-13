@@ -71,9 +71,9 @@ See `frost_test.go` for a complete, runnable flow.
 - `NewSigningState` signs a 32-byte digest; `NewSigningStateForMessage` signs
   arbitrary bytes. Use the latter when the target chain expects Ed25519 over
   the raw message (for example Solana).
-- `DerivePublicKey` and `DeriveKeyshare` accept a derivation path but the FFI
-  does not implement hierarchical derivation yet; they return the group key
-  and the unchanged keyshare.
+- `DerivePublicKey` and `DeriveKeyshare` only accept the root path `"m"`:
+  Ed25519 child key derivation (SLIP-10) is not implemented yet, and other
+  paths return an error instead of silently yielding the root key.
 - `CreatePartialSignature`, `SigningState.GenerateMsg2` and
   `SigningState.HandleMsg2` exist for DKLs23 API parity and are no-ops.
 - State objects own native memory: call `Free` when done. They are not safe

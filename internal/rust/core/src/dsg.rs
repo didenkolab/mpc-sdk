@@ -716,7 +716,10 @@ pub(crate) fn combine_partial_signature(
     }
 
     let r = r.to_affine().x();
-    let sum_s_1_inv = sum_s_1.invert().unwrap();
+    // s_1 values come from peers: a malicious signer can force a zero sum,
+    // which must be an error rather than a panic that aborts the host app.
+    let sum_s_1_inv = Option::<Scalar>::from(sum_s_1.invert())
+        .ok_or(SignError::FailedCheck("Sum of s_1 is zero"))?;
     let s = sum_s_0 * sum_s_1_inv;
 
     let sign = Signature::from_scalars(r, s)?;

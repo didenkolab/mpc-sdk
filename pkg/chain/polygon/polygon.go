@@ -62,7 +62,10 @@ func BuildLegacyTx(in LegacyTxInput) (*types.Transaction, types.Signer, [32]byte
 		in.ChainID = PolygonMainnetChainID
 	}
 
-	to := common.HexToAddress(in.To)
+	to, err := evm.ParseAddress(in.To)
+	if err != nil {
+		return nil, nil, [32]byte{}, err
+	}
 	tx := types.NewTransaction(in.Nonce, to, in.Value, in.GasLimit, in.GasPrice, in.Data)
 	signer := types.NewEIP155Signer(in.ChainID)
 	h := signer.Hash(tx)
@@ -77,7 +80,10 @@ func BuildEIP1559Tx(in EIP1559TxInput) (*types.Transaction, types.Signer, [32]by
 		in.ChainID = PolygonMainnetChainID
 	}
 
-	to := common.HexToAddress(in.To)
+	to, err := evm.ParseAddress(in.To)
+	if err != nil {
+		return nil, nil, [32]byte{}, err
+	}
 
 	dynamicTx := &types.DynamicFeeTx{
 		ChainID:   in.ChainID,

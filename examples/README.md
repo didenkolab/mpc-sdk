@@ -18,6 +18,10 @@ exits with a non-zero status if any step fails.
 | [solana-frost-mpc](solana-frost-mpc) | FROST 2-of-3 | SOL transfer |
 | [near-frost-mpc](near-frost-mpc) | FROST 2-of-3 | NEAR transfer |
 
+Live networks: [testnet](testnet) threshold-signs real transactions on
+Bitcoin testnet4/signet, Sepolia, Solana devnet, Tron Nile and NEAR testnet
+with live chain data (dry run unless `-broadcast` is passed; mainnet is refused).
+
 Mobile apps: [ios](ios) (Swift) and [android](android) (Kotlin + JNI).
 
 ## Running
@@ -34,6 +38,6 @@ this for you).
 
 All parties run in the same process and messages are passed in memory by
 [`internal/mpcdemo`](internal/mpcdemo), which routes broadcast and
-point-to-point messages exactly as a network transport would. Transactions use
-placeholder inputs (UTXOs, nonces, block hashes), so they are valid against
-those inputs but not broadcastable without real chain data.
+point-to-point messages exactly as a network transport would. The chain
+examples use placeholder inputs (UTXOs, nonces, block hashes), so they are valid
+against those inputs but not broadcastable; use `testnet` for real chain data.

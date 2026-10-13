@@ -253,7 +253,7 @@ func AttachSignature(tx *Transaction, signature []byte) {
 // 4: ref_block_hash (bytes)
 // 8: expiration (int64)
 // 11: contract (repeated)
-// 13: timestamp (int64)
+// 14: timestamp (int64)
 // 18: fee_limit (int64)
 func serializeRawData(rawData RawData) ([]byte, error) {
 	buf := &bytes.Buffer{}
@@ -288,8 +288,8 @@ func serializeRawData(rawData RawData) ([]byte, error) {
 		}
 	}
 
-	// timestamp (field 13)
-	if err := writeInt64Field(buf, 13, rawData.Timestamp); err != nil {
+	// timestamp (field 14)
+	if err := writeInt64Field(buf, 14, rawData.Timestamp); err != nil {
 		return nil, err
 	}
 
