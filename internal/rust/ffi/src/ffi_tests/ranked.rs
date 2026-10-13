@@ -428,8 +428,7 @@ fn dkg_init_with_ranks_rejects_out_of_range_parameters() {
     expect_err(init(0, &[0, 0], 2, 256), "invalid threshold");
 
     for n in 2..=5usize {
-        // t = 1 is rejected as an invalid threshold (covered above).
-        for t in 2..=n {
+        for t in 1..=n {
             let pid = n as u8;
             expect_err(
                 init(pid, &vec![0; n], n, t),

@@ -150,3 +150,15 @@ fn partial_signature_response_shape() {
     // Consume the other handle so the registry stays tidy.
     partial(&presigs[1].1, &hash);
 }
+
+#[test]
+fn one_of_two_keys_sign_with_a_single_party() {
+    // t = 1 is a supported 1-of-n setup: either party signs alone.
+    let keyshares = run_dkg(&dkg_parties(2, 1));
+    let hash = sha256(b"1-of-2");
+    let public_key = derive_public_key(&keyshares[0], "m");
+    for ks in &keyshares {
+        let sig = sign(&[ks.as_str()], "m", &hash);
+        assert!(verify(&public_key, &hash, &sig));
+    }
+}

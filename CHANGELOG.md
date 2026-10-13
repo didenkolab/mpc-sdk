@@ -32,7 +32,8 @@ All notable changes to this project are documented here. The format follows
 - **DKLs23 FFI — keyshare validation:** `dkls23_dsg_init` rejects inconsistent
   keyshares (e.g. a relabelled `party_id`) instead of panicking; found by
   fuzzing.
-- **DKLs23 FFI — thresholds:** `t < 2` and `t > n` are rejected at init.
+- **DKLs23 FFI — thresholds:** `t = 0` and `t > n` are rejected at init. `t = 1`
+  (1-of-n, every party can sign alone) stays supported.
 - **FROST FFI:** `frost_derive_public_key` / `frost_derive_keyshare` reject any
   path other than `"m"` instead of silently returning the root key (Ed25519
   child derivation is not implemented).

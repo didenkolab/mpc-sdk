@@ -482,13 +482,15 @@ pub unsafe extern "C" fn dkls23_free_string(s: *mut c_char) {
     }
 }
 
-/// Threshold signing needs 2 <= t <= n (t = 1 would give every party the
-/// full key) and ids must fit in a byte.
+/// Require 1 <= t <= n <= 255. t = 1 is allowed on purpose: it is a valid
+/// 1-of-n wallet in which every party can sign alone (used for "any device
+/// can sign" setups); it gives each party full signing power, so only use it
+/// when that is the intent.
 fn check_threshold(threshold: usize, n_parties: usize) -> Result<(), String> {
-    if threshold < 2 || threshold > n_parties || n_parties > u8::MAX as usize
+    if threshold < 1 || threshold > n_parties || n_parties > u8::MAX as usize
     {
         return Err(format!(
-            "invalid threshold {threshold} for {n_parties} parties (need 2 <= t <= n <= 255)"
+            "invalid threshold {threshold} for {n_parties} parties (need 1 <= t <= n <= 255)"
         ));
     }
     Ok(())

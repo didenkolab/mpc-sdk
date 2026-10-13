@@ -95,7 +95,7 @@ fn dkg_init_with_ranks_rejects_invalid_parameters() {
         assert!(last_error().contains("party_id out of bounds"));
 
         assert!(dkls23_dkg_init_with_ranks(0, ranks.as_ptr(), 3, 1).is_null());
-        assert!(last_error().contains("invalid threshold"));
+        assert!(last_error().contains("max rank must be less than threshold"));
 
         assert!(dkls23_dkg_init_with_ranks(0, ranks.as_ptr(), 0, 2).is_null());
     }
