@@ -89,9 +89,18 @@ fn verify_accepts_hex_or_json_public_key() {
 
 #[test]
 fn derive_keyshare_is_identity_and_still_signs() {
-    // SLIP-10 derivation is not implemented: the path is ignored.
+    // SLIP-10 derivation is not implemented: only the root path is accepted.
     let keyshares = run_dkg(&dkg_parties(2, 2));
-    let path = cstr("m/44'/501'/0'");
+    let child = cstr("m/44'/501'/0'");
+    let ks0 = cstr(&keyshares[0]);
+    unsafe {
+        assert!(frost_derive_keyshare(ks0.as_ptr(), child.as_ptr()).is_null());
+        assert!(
+            frost_derive_public_key(ks0.as_ptr(), child.as_ptr()).is_null()
+        );
+    }
+    assert!(last_error().contains("not supported"), "{}", last_error());
+    let path = cstr("m");
     let derived: Vec<String> = keyshares
         .iter()
         .map(|ks| {

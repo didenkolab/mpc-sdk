@@ -37,3 +37,6 @@ coverage.html
 
 # Cargo config (local build settings)
 .cargo/config.toml
+
+# examples/testnet: TEST ONLY keyshares created by `go run ./examples/testnet`
+.testnet-keys/

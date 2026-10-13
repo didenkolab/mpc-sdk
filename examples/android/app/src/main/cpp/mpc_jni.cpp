@@ -309,10 +309,15 @@ JNIEXPORT jstring JNICALL
 Java_com_didenkolab_mpcsdk_demo_NativeMpc_createPartialSignature(
         JNIEnv* env, jobject thiz, jstring presig_json, jbyteArray msg_hash) {
     (void)thiz;
+    // The FFI reads exactly 32 bytes; reject anything else before it over-reads.
+    if (msg_hash == nullptr || env->GetArrayLength(msg_hash) != 32) {
+        env->ThrowNew(env->FindClass("java/lang/IllegalArgumentException"),
+                      "message hash must be exactly 32 bytes");
+        return nullptr;
+    }
     const char* presig = jstringToChar(env, presig_json);
     jbyte* hash_bytes = env->GetByteArrayElements(msg_hash, nullptr);
 
-    // FFI expects exactly 32 bytes, no length parameter needed
     char* result = dkls23_create_partial_signature(
             presig,
             reinterpret_cast<const uint8_t*>(hash_bytes)

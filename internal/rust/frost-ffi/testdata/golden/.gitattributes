@@ -1,0 +1,3 @@
+# Large single-line fixtures: keep them out of text diffs.
+keyshare_*.json -diff linguist-generated=true
+messages/*.json -diff linguist-generated=true

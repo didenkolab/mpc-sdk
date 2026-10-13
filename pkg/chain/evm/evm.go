@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"strings"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
@@ -36,16 +37,36 @@ type LegacyTxInput struct {
 	ChainID  *big.Int
 }
 
+// ParseAddress parses a 0x-prefixed 20-byte hex address. Unlike
+// common.HexToAddress it never truncates or pads: malformed input is an
+// error. Mixed-case input must carry a valid EIP-55 checksum, so a typo in a
+// checksummed address is caught instead of silently sending funds elsewhere.
+func ParseAddress(s string) (common.Address, error) {
+	if !strings.HasPrefix(s, "0x") && !strings.HasPrefix(s, "0X") {
+		return common.Address{}, fmt.Errorf("evm: address %q must start with 0x", s)
+	}
+	if !common.IsHexAddress(s) {
+		return common.Address{}, fmt.Errorf("evm: invalid address %q", s)
+	}
+	addr := common.HexToAddress(s)
+	body := s[2:]
+	if body != strings.ToLower(body) && body != strings.ToUpper(body) && addr.Hex()[2:] != body {
+		return common.Address{}, fmt.Errorf("evm: address %q has an invalid EIP-55 checksum", s)
+	}
+	return addr, nil
+}
+
 // BuildUnsigned creates a legacy transaction together with its EIP-155
 // signer and the 32-byte hash that has to be signed.
 func BuildUnsigned(in LegacyTxInput) (*types.Transaction, types.Signer, [32]byte, error) {
 	if in.ChainID == nil || in.ChainID.Sign() <= 0 {
 		return nil, nil, [32]byte{}, errors.New("evm: chain ID must be positive")
 	}
-	if !common.IsHexAddress(in.To) {
-		return nil, nil, [32]byte{}, fmt.Errorf("evm: invalid recipient address %q", in.To)
+	to, err := ParseAddress(in.To)
+	if err != nil {
+		return nil, nil, [32]byte{}, fmt.Errorf("evm: invalid recipient: %w", err)
 	}
-	tx := types.NewTransaction(in.Nonce, common.HexToAddress(in.To), in.Value, in.GasLimit, in.GasPrice, in.Data)
+	tx := types.NewTransaction(in.Nonce, to, in.Value, in.GasLimit, in.GasPrice, in.Data)
 	signer := types.NewEIP155Signer(in.ChainID)
 	return tx, signer, signer.Hash(tx), nil
 }

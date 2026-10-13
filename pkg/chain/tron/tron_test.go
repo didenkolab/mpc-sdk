@@ -243,3 +243,24 @@ func TestPackAmount(t *testing.T) {
 		}
 	}
 }
+
+// TestBuildTRXTransferMatchesNode pins a transfer built by a Nile testnet node
+// (wallet/createtransaction): the SDK must produce byte-identical raw_data and
+// the same txID, otherwise the network rejects the signature.
+func TestBuildTRXTransferMatchesNode(t *testing.T) {
+	const (
+		nodeRawHex = "0a0229292208d7a4a9309e76405a40f0aef69393345a65080112610a2d747970652e676f6f676c65617069732e636f6d2f70726f746f636f6c2e5472616e73666572436f6e747261637412300a1541f7c3feccb6461aab0fd25f61d9560645b08228cb121541a614f803b6fd780986a42c78ec9c7f77e6ded13c180170cfddf2939334"
+		nodeTxID   = "bdb4daa470cc2e6ee91dbdbe6ee842d3dcfa0c35f03e35b5acbba8301206b384"
+	)
+	_, raw, err := BuildTRXTransfer("TYZGhS8UG5okCZneaJoYZJJhsqeD6ZZZZZ", "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t", 1,
+		"2929", "d7a4a9309e76405a", 1791848454000, 1791848394447)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := hex.EncodeToString(raw); got != nodeRawHex {
+		t.Fatalf("raw_data differs from the node:\n got %s\nwant %s", got, nodeRawHex)
+	}
+	if id := sha256.Sum256(raw); hex.EncodeToString(id[:]) != nodeTxID {
+		t.Fatalf("txID = %x, want %s", id, nodeTxID)
+	}
+}

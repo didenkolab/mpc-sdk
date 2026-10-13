@@ -1,3 +1,10 @@
+// Package cosmos derives Cosmos SDK addresses and builds sign documents for
+// common messages.
+//
+// Experimental: SignDoc and SignBytes use a JSON representation, not the
+// protobuf encoding Cosmos chains verify (SIGN_MODE_DIRECT), so transactions
+// built with this package are NOT accepted by Cosmos networks yet. Address
+// derivation (DeriveAddress) is correct and safe to use.
 package cosmos
 
 import (
@@ -318,7 +325,9 @@ func buildSignDoc(txBody TxBody, sequence, accountNumber uint64, chainID string,
 	return signDoc, nil
 }
 
-// SignBytes returns JSON bytes of SignDoc (deterministic for structs).
+// SignBytes returns a deterministic JSON encoding of doc. It is NOT the
+// protobuf SignDoc that Cosmos chains verify, so a signature over these bytes
+// will be rejected by the network; see the package documentation.
 func SignBytes(doc *SignDoc) ([]byte, error) {
 	return json.Marshal(doc)
 }

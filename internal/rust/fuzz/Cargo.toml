@@ -1,0 +1,173 @@
+# Coverage-guided fuzzing for the DKLs23 and FROST C ABIs.
+#
+# This is a standalone workspace (see the empty [workspace] table below) so the
+# regular `internal/rust` build never needs a nightly toolchain or libFuzzer.
+# The FFI crates stay `staticlib` + `cdylib` only: their `src/lib.rs` files are
+# compiled into this crate as modules via `#[path]` (see src/lib.rs), so the
+# shipped artifacts and their LTO settings are untouched.
+[package]
+name = "mpc-ffi-fuzz"
+version = "0.0.0"
+license = "Apache-2.0"
+edition = "2021"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[lib]
+path = "src/lib.rs"
+test = false
+doctest = false
+
+[dependencies]
+libfuzzer-sys = "0.4"
+arbitrary = "1"
+bincode = "1"
+
+# Mirrors internal/rust/ffi/Cargo.toml (dkls23-ffi).
+dkls23-ll = { path = "../core" }
+serde_json = "1"
+rand = "0.8"
+rand_chacha = "0.3"
+getrandom = "0.2"
+derivation-path = "0.2.0"
+hex = "0.4"
+sl-mpc-mate = { git = "https://github.com/silence-laboratories/sl-crypto.git", rev = "f366497" }
+k256 = { version = "0.13.2", features = ["ecdsa", "serde"] }
+
+# Mirrors internal/rust/frost-ffi/Cargo.toml (frost-ffi).
+frost-ed25519 = { version = "2.2.0", features = ["serialization"] }
+serde = { version = "1.0", features = ["derive"] }
+
+[workspace]
+members = ["."]
+
+[profile.release]
+debug = 1
+
+[[bin]]
+name = "dkls_dkg_msg1"
+path = "fuzz_targets/dkls_dkg_msg1.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "dkls_dkg_msg2"
+path = "fuzz_targets/dkls_dkg_msg2.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "dkls_dkg_msg3"
+path = "fuzz_targets/dkls_dkg_msg3.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "dkls_dkg_msg4"
+path = "fuzz_targets/dkls_dkg_msg4.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "dkls_dsg_init"
+path = "fuzz_targets/dkls_dsg_init.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "dkls_dsg_msg1"
+path = "fuzz_targets/dkls_dsg_msg1.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "dkls_dsg_msg2"
+path = "fuzz_targets/dkls_dsg_msg2.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "dkls_dsg_msg3"
+path = "fuzz_targets/dkls_dsg_msg3.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "dkls_partial_sig"
+path = "fuzz_targets/dkls_partial_sig.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "dkls_combine"
+path = "fuzz_targets/dkls_combine.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "dkls_derive"
+path = "fuzz_targets/dkls_derive.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "frost_dkg_msg1"
+path = "fuzz_targets/frost_dkg_msg1.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "frost_dkg_msg2"
+path = "fuzz_targets/frost_dkg_msg2.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "frost_signing_init"
+path = "fuzz_targets/frost_signing_init.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "frost_signing_msg1"
+path = "fuzz_targets/frost_signing_msg1.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "frost_combine"
+path = "fuzz_targets/frost_combine.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "frost_verify"
+path = "fuzz_targets/frost_verify.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "frost_derive"
+path = "fuzz_targets/frost_derive.rs"
+test = false
+doc = false
+bench = false

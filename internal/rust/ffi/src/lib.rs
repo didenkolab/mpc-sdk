@@ -98,7 +98,33 @@ fn ser_err(what: &str) -> impl FnOnce(serde_json::Error) -> String + '_ {
 }
 
 fn parse_err(what: &str) -> impl FnOnce(serde_json::Error) -> String + '_ {
-    move |e| format!("Failed to parse {what} JSON: {e}")
+    move |e| {
+        format!(
+            "Failed to parse {what} JSON: {}",
+            redact_quoted(&e.to_string())
+        )
+    }
+}
+
+/// serde_json errors quote offending string values, which may be key
+/// material; keep the error shape but drop the quoted contents.
+fn redact_quoted(msg: &str) -> String {
+    let mut out = String::with_capacity(msg.len());
+    let mut in_quote = false;
+    for c in msg.chars() {
+        if c == '"' {
+            if !in_quote {
+                out.push_str("\"…");
+            }
+            in_quote = !in_quote;
+            if !in_quote {
+                out.push('"');
+            }
+        } else if !in_quote {
+            out.push(c);
+        }
+    }
+    out
 }
 
 unsafe fn str_arg<'a>(
@@ -117,6 +143,79 @@ unsafe fn state_mut<'a, T>(state: *mut T) -> Result<&'a mut T, String> {
     state
         .as_mut()
         .ok_or_else(|| "NULL state pointer".to_string())
+}
+
+// -------------------- Round tracking --------------------
+
+// Each protocol round must run exactly once per state: re-running a round
+// re-uses its secret randomness against attacker-chosen messages, and a
+// round that failed inside the protocol code may leave the state half
+// updated. States created by the init functions are tracked by address;
+// a failure inside the protocol code poisons the state for good. Failures
+// before the protocol code runs (bad JSON, wrong senders) leave it usable.
+
+#[derive(Clone, Copy)]
+enum Progress {
+    Next(u8),
+    Poisoned,
+}
+
+static PROGRESS: OnceLock<Mutex<HashMap<usize, Progress>>> = OnceLock::new();
+
+fn with_progress<R>(f: impl FnOnce(&mut HashMap<usize, Progress>) -> R) -> R {
+    let mut map = PROGRESS
+        .get_or_init(|| Mutex::new(HashMap::new()))
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    f(&mut map)
+}
+
+fn track<T>(state: *mut T) -> *mut T {
+    if !state.is_null() {
+        with_progress(|m| m.insert(state as usize, Progress::Next(1)));
+    }
+    state
+}
+
+fn untrack<T>(state: *mut T) {
+    with_progress(|m| m.remove(&(state as usize)));
+}
+
+/// Fail unless `round` is the next round of `state`.
+fn check_round<T>(
+    state: *mut T,
+    round: u8,
+    what: &str,
+) -> Result<(), String> {
+    match with_progress(|m| m.get(&(state as usize)).copied()) {
+        None => Ok(()),
+        Some(Progress::Next(next)) if next == round => Ok(()),
+        Some(Progress::Poisoned) => Err(format!(
+            "Failed to handle {what}: state is unusable after an earlier \
+             protocol error; start a new session"
+        )),
+        Some(Progress::Next(next)) => Err(format!(
+            "Failed to handle {what}: out of order (expected round {next})"
+        )),
+    }
+}
+
+/// Record the outcome of the protocol step for `round`.
+fn finish_round<T, R, E: std::fmt::Debug>(
+    state: *mut T,
+    round: u8,
+    what: &str,
+    result: Result<R, E>,
+) -> Result<R, String> {
+    with_progress(|m| {
+        if let Some(p) = m.get_mut(&(state as usize)) {
+            *p = match result {
+                Ok(_) => Progress::Next(round + 1),
+                Err(_) => Progress::Poisoned,
+            };
+        }
+    });
+    result.map_err(|e| format!("Failed to handle {what}: {e:?}"))
 }
 
 // -------------------- Sender validation --------------------
@@ -205,6 +304,57 @@ fn check_signer_set(
             "Failed to handle msg1: signer ranks {ranks:?} cannot \
              reconstruct the key (need sorted rank[i] <= i)"
         ));
+    }
+    Ok(())
+}
+
+/// Validate the shape of a keyshare before signing with it.
+///
+/// The signing code indexes the per-party lists by party id without bounds
+/// checks, inverts the threshold, and inverts a Birkhoff matrix that is
+/// singular when evaluation points repeat. Several of these lists are
+/// private to `dkls23_ll`, so they are checked on the JSON form.
+fn check_keyshare(
+    keyshare: &Keyshare,
+    json: &serde_json::Value,
+) -> Result<(), String> {
+    let n = keyshare.rank_list.len();
+    let me = usize::from(keyshare.party_id);
+    if keyshare.threshold == 0 || me >= n {
+        return Err("Invalid keyshare: threshold or party_id out of range"
+            .to_string());
+    }
+    let lists =
+        |field: &str| json.get(field).and_then(serde_json::Value::as_array);
+    for (field, expected) in [
+        ("x_i_list", n),
+        ("seed_ot_receivers", n - 1),
+        ("seed_ot_senders", n - 1),
+        ("rec_seed_list", me),
+        ("sent_seed_list", n - 1 - me),
+    ] {
+        if lists(field).map(Vec::len) != Some(expected) {
+            return Err(format!(
+                "Invalid keyshare: {field} must have {expected} entries"
+            ));
+        }
+    }
+    let points = lists("x_i_list").map_or(&[][..], Vec::as_slice);
+    let same = |a: &serde_json::Value, b: &serde_json::Value| match (
+        a.as_str(),
+        b.as_str(),
+    ) {
+        (Some(a), Some(b)) => a.eq_ignore_ascii_case(b),
+        _ => a == b,
+    };
+    if points
+        .iter()
+        .enumerate()
+        .any(|(i, a)| points[..i].iter().any(|b| same(a, b)))
+    {
+        return Err(
+            "Invalid keyshare: duplicate x_i_list entries".to_string()
+        );
     }
     Ok(())
 }
@@ -332,6 +482,18 @@ pub unsafe extern "C" fn dkls23_free_string(s: *mut c_char) {
     }
 }
 
+/// Threshold signing needs 2 <= t <= n (t = 1 would give every party the
+/// full key) and ids must fit in a byte.
+fn check_threshold(threshold: usize, n_parties: usize) -> Result<(), String> {
+    if threshold < 2 || threshold > n_parties || n_parties > u8::MAX as usize
+    {
+        return Err(format!(
+            "invalid threshold {threshold} for {n_parties} parties (need 2 <= t <= n <= 255)"
+        ));
+    }
+    Ok(())
+}
+
 // -------------------- FFI: DKG --------------------
 
 /// Initialize DKG state
@@ -342,18 +504,16 @@ pub extern "C" fn dkls23_dkg_init(
     n_parties: usize,
     threshold: usize,
 ) -> *mut DkgState {
-    ffi_state(|| {
+    track(ffi_state(|| {
         if party_id as usize >= n_parties {
             return Err("party_id out of bounds".to_string());
         }
-        if threshold == 0 || threshold > u8::MAX as usize {
-            return Err("invalid threshold".to_string());
-        }
+        check_threshold(threshold, n_parties)?;
         let party = Party::new(n_parties, threshold, party_id as usize);
         let mut rng =
             entropy_rng(&[party_id, n_parties as u8, threshold as u8]);
         Ok(DkgState::new(party, &mut rng))
-    })
+    }))
 }
 
 /// Initialize DKG state with custom ranks
@@ -371,7 +531,7 @@ pub unsafe extern "C" fn dkls23_dkg_init_with_ranks(
     ranks_len: usize,
     threshold: usize,
 ) -> *mut DkgState {
-    ffi_state(|| {
+    track(ffi_state(|| {
         if ranks_ptr.is_null() {
             return Err("NULL ranks pointer".to_string());
         }
@@ -379,6 +539,7 @@ pub unsafe extern "C" fn dkls23_dkg_init_with_ranks(
         if party_id as usize >= ranks.len() {
             return Err("party_id out of bounds".to_string());
         }
+        check_threshold(threshold, ranks.len())?;
         if let Some(max_rank) = ranks.iter().copied().max() {
             if max_rank as usize >= threshold {
                 return Err(
@@ -386,15 +547,28 @@ pub unsafe extern "C" fn dkls23_dkg_init_with_ranks(
                 );
             }
         }
-        if threshold > u8::MAX as usize {
-            return Err("invalid threshold".to_string());
+        // The key is only usable if some t parties can reconstruct it; the
+        // t lowest ranks are the best candidates. Without this check the
+        // last DKG round hits a singular Birkhoff matrix and panics.
+        let mut lowest = ranks.clone();
+        lowest.sort_unstable();
+        if lowest
+            .iter()
+            .take(threshold)
+            .enumerate()
+            .any(|(i, &r)| r as usize > i)
+        {
+            return Err(format!(
+                "ranks {ranks:?} with threshold {threshold} admit no signer \
+                 set that can reconstruct the key"
+            ));
         }
         let party =
             Party::new_with_ranks(ranks, threshold, party_id as usize);
         let mut rng =
             entropy_rng(&[party_id, ranks_len as u8, threshold as u8]);
         Ok(DkgState::new(party, &mut rng))
-    })
+    }))
 }
 
 /// Generate DKG message 1
@@ -423,6 +597,7 @@ pub unsafe extern "C" fn dkls23_dkg_handle_msg1(
     msgs_json: *const c_char,
 ) -> *mut c_char {
     ffi_string(|| {
+        let raw = state;
         let state = state_mut(state)?;
         let msgs: Vec<KeygenMsg1> =
             serde_json::from_str(str_arg(msgs_json, "msg1")?)
@@ -433,9 +608,13 @@ pub unsafe extern "C" fn dkls23_dkg_handle_msg1(
             peers_of(dkg_party_id(state), msgs.len() + 1),
             msgs.iter().map(|m| m.from_id),
         )?;
-        let msg2 = state
-            .handle_msg1(&mut entropy_rng(&[]), msgs)
-            .map_err(|e| format!("Failed to handle msg1: {e:?}"))?;
+        check_round(raw, 1, "msg1")?;
+        let msg2 = finish_round(
+            raw,
+            1,
+            "msg1",
+            state.handle_msg1(&mut entropy_rng(&[]), msgs),
+        )?;
         serde_json::to_string(&msg2).map_err(ser_err("msg2"))
     })
 }
@@ -451,13 +630,18 @@ pub unsafe extern "C" fn dkls23_dkg_handle_msg2(
     msgs_json: *const c_char,
 ) -> *mut c_char {
     ffi_string(|| {
+        let raw = state;
         let state = state_mut(state)?;
         let msgs: Vec<KeygenMsg2> =
             serde_json::from_str(str_arg(msgs_json, "msg2")?)
                 .map_err(parse_err("msg2"))?;
-        let msg3 = state
-            .handle_msg2(&mut entropy_rng(&[]), msgs)
-            .map_err(|e| format!("Failed to handle msg2: {e:?}"))?;
+        check_round(raw, 2, "msg2")?;
+        let msg3 = finish_round(
+            raw,
+            2,
+            "msg2",
+            state.handle_msg2(&mut entropy_rng(&[]), msgs),
+        )?;
         serde_json::to_string(&msg3).map_err(ser_err("msg3"))
     })
 }
@@ -486,6 +670,7 @@ pub unsafe extern "C" fn dkls23_dkg_handle_msg3(
     commitments_json: *const c_char,
 ) -> *mut c_char {
     ffi_string(|| {
+        let raw = state;
         let state = state_mut(state)?;
         let msgs: Vec<KeygenMsg3> =
             serde_json::from_str(str_arg(msgs_json, "msg3")?)
@@ -504,9 +689,13 @@ pub unsafe extern "C" fn dkls23_dkg_handle_msg3(
             .iter()
             .filter_map(|h| hex::decode(h).ok()?.try_into().ok())
             .collect();
-        let msg4 = state
-            .handle_msg3(&mut entropy_rng(&[]), msgs, &commitments)
-            .map_err(|e| format!("Failed to handle msg3: {e:?}"))?;
+        check_round(raw, 3, "msg3")?;
+        let msg4 = finish_round(
+            raw,
+            3,
+            "msg3",
+            state.handle_msg3(&mut entropy_rng(&[]), msgs, &commitments),
+        )?;
         serde_json::to_string(&msg4).map_err(ser_err("msg4"))
     })
 }
@@ -522,6 +711,7 @@ pub unsafe extern "C" fn dkls23_dkg_handle_msg4(
     msgs_json: *const c_char,
 ) -> *mut c_char {
     ffi_string(|| {
+        let raw = state;
         let state = state_mut(state)?;
         let msgs: Vec<KeygenMsg4> =
             serde_json::from_str(str_arg(msgs_json, "msg4")?)
@@ -531,9 +721,8 @@ pub unsafe extern "C" fn dkls23_dkg_handle_msg4(
             dkg_peers(state),
             msgs.iter().map(|m| m.from_id),
         )?;
-        let keyshare = state
-            .handle_msg4(msgs)
-            .map_err(|e| format!("Failed to handle msg4: {e:?}"))?;
+        check_round(raw, 4, "msg4")?;
+        let keyshare = finish_round(raw, 4, "msg4", state.handle_msg4(msgs))?;
         serde_json::to_string(&keyshare).map_err(ser_err("keyshare"))
     })
 }
@@ -546,6 +735,7 @@ pub unsafe extern "C" fn dkls23_dkg_handle_msg4(
 #[no_mangle]
 pub unsafe extern "C" fn dkls23_dkg_free_state(state: *mut DkgState) {
     if !state.is_null() {
+        untrack(state);
         drop(Box::from_raw(state));
     }
 }
@@ -562,10 +752,15 @@ pub unsafe extern "C" fn dkls23_dsg_init(
     keyshare_json: *const c_char,
     derivation_path: *const c_char,
 ) -> *mut DsgState {
-    ffi_state(|| {
-        let keyshare: Keyshare =
-            serde_json::from_str(str_arg(keyshare_json, "keyshare")?)
-                .map_err(parse_err("keyshare"))?;
+    track(ffi_state(|| {
+        let keyshare_str = str_arg(keyshare_json, "keyshare")?;
+        let keyshare: Keyshare = serde_json::from_str(keyshare_str)
+            .map_err(parse_err("keyshare"))?;
+        check_keyshare(
+            &keyshare,
+            &serde_json::from_str(keyshare_str)
+                .map_err(parse_err("keyshare"))?,
+        )?;
         let path = DerivationPath::from_str(str_arg(
             derivation_path,
             "derivation path",
@@ -573,7 +768,7 @@ pub unsafe extern "C" fn dkls23_dsg_init(
         .map_err(|e| format!("Failed to parse derivation path: {e}"))?;
         DsgState::new(&mut thread_rng(), keyshare, &path)
             .map_err(|e| format!("Failed to create DSG state: {e:?}"))
-    })
+    }))
 }
 
 /// Generate signing message 1
@@ -602,6 +797,7 @@ pub unsafe extern "C" fn dkls23_dsg_handle_msg1(
     msgs_json: *const c_char,
 ) -> *mut c_char {
     ffi_string(|| {
+        let raw = state;
         let state = state_mut(state)?;
         let msgs: Vec<SignMsg1> =
             serde_json::from_str(str_arg(msgs_json, "msg1")?)
@@ -615,9 +811,13 @@ pub unsafe extern "C" fn dkls23_dsg_handle_msg1(
             &state.keyshare,
             msgs.iter().map(|m| m.from_id).collect(),
         )?;
-        let msg2 = state
-            .handle_msg1(&mut thread_rng(), msgs)
-            .map_err(|e| format!("Failed to handle msg1: {e:?}"))?;
+        check_round(raw, 1, "msg1")?;
+        let msg2 = finish_round(
+            raw,
+            1,
+            "msg1",
+            state.handle_msg1(&mut thread_rng(), msgs),
+        )?;
         serde_json::to_string(&msg2).map_err(ser_err("msg2"))
     })
 }
@@ -633,6 +833,7 @@ pub unsafe extern "C" fn dkls23_dsg_handle_msg2(
     msgs_json: *const c_char,
 ) -> *mut c_char {
     ffi_string(|| {
+        let raw = state;
         let state = state_mut(state)?;
         let msgs: Vec<SignMsg2> =
             serde_json::from_str(str_arg(msgs_json, "msg2")?)
@@ -642,9 +843,13 @@ pub unsafe extern "C" fn dkls23_dsg_handle_msg2(
             dsg_peers(state),
             msgs.iter().map(|m| m.from_id),
         )?;
-        let msg3 = state
-            .handle_msg2(&mut thread_rng(), msgs)
-            .map_err(|e| format!("Failed to handle msg2: {e:?}"))?;
+        check_round(raw, 2, "msg2")?;
+        let msg3 = finish_round(
+            raw,
+            2,
+            "msg2",
+            state.handle_msg2(&mut thread_rng(), msgs),
+        )?;
         serde_json::to_string(&msg3).map_err(ser_err("msg3"))
     })
 }
@@ -660,6 +865,7 @@ pub unsafe extern "C" fn dkls23_dsg_handle_msg3(
     msgs_json: *const c_char,
 ) -> *mut c_char {
     ffi_string(|| {
+        let raw = state;
         let state = state_mut(state)?;
         let msgs: Vec<SignMsg3> =
             serde_json::from_str(str_arg(msgs_json, "msg3")?)
@@ -669,9 +875,8 @@ pub unsafe extern "C" fn dkls23_dsg_handle_msg3(
             dsg_peers(state),
             msgs.iter().map(|m| m.from_id),
         )?;
-        let presig = state
-            .handle_msg3(msgs)
-            .map_err(|e| format!("Failed to handle msg3: {e:?}"))?;
+        check_round(raw, 3, "msg3")?;
+        let presig = finish_round(raw, 3, "msg3", state.handle_msg3(msgs))?;
         store_presignature(presig)
             .map_err(|e| format!("Failed to store presignature: {e}"))
     })
@@ -746,6 +951,7 @@ pub unsafe extern "C" fn dkls23_combine_signatures(
 #[no_mangle]
 pub unsafe extern "C" fn dkls23_dsg_free_state(state: *mut DsgState) {
     if !state.is_null() {
+        untrack(state);
         drop(Box::from_raw(state));
     }
 }
@@ -836,8 +1042,17 @@ pub unsafe extern "C" fn dkls23_derive_keyshare(
 
         // Shift the secret share by the additive offset and move the public
         // key and chain code to the child so further derivations stay
-        // consistent.
-        keyshare.apply_secret_offset(secret_offset);
+        // consistent. Only rank-0 shares move: a rank-r share is the r-th
+        // derivative of the sharing polynomial, and a constant offset of the
+        // secret leaves derivatives unchanged.
+        let rank = keyshare
+            .rank_list
+            .get(keyshare.party_id as usize)
+            .copied()
+            .ok_or("keyshare party_id is out of range")?;
+        if rank == 0 {
+            keyshare.apply_secret_offset(secret_offset);
+        }
         keyshare.public_key = derived_pubkey.to_affine();
         keyshare.root_chain_code =
             derive_chain_code(&parent_pubkey, &parent_chain_code, &path)

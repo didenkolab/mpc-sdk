@@ -59,6 +59,37 @@ fn invalid_arg(msg: &str) -> *mut c_char {
     std::ptr::null_mut()
 }
 
+/// serde_json errors quote offending string values, which may be key
+/// material; keep the error shape but drop the quoted contents.
+fn redact(e: &serde_json::Error) -> String {
+    let msg = e.to_string();
+    let mut out = String::with_capacity(msg.len());
+    let mut in_quote = false;
+    for c in msg.chars() {
+        if c == '"' {
+            out.push_str(if in_quote { "\"" } else { "\"…" });
+            in_quote = !in_quote;
+        } else if !in_quote {
+            out.push(c);
+        }
+    }
+    out
+}
+
+/// Ed25519 child key derivation (SLIP-10) is not implemented, so only the
+/// root path is accepted; anything else would silently return the root key.
+unsafe fn check_root_path(path: *const c_char) -> Result<(), String> {
+    if path.is_null() {
+        return Ok(());
+    }
+    match CStr::from_ptr(path).to_str() {
+        Ok("m") | Ok("") => Ok(()),
+        _ => Err("Ed25519 child key derivation is not supported; only the \
+                  root path \"m\" is accepted"
+            .to_string()),
+    }
+}
+
 fn null_with_err<T>(msg: &str) -> *mut T {
     set_last_error(msg);
     std::ptr::null_mut()
@@ -273,7 +304,7 @@ pub unsafe extern "C" fn frost_dkg_handle_msg1(
     let msgs_str = CStr::from_ptr(msgs_json).to_string_lossy();
     let values: Vec<Value> = match serde_json::from_str(&msgs_str) {
         Ok(v) => v,
-        Err(e) => return invalid_arg(&format!("parse msgs: {e}")),
+        Err(e) => return invalid_arg(&format!("parse msgs: {}", redact(&e))),
     };
     if values.len() != usize::from(st.max_signers - 1) {
         return invalid_arg("unexpected number of round1 packages");
@@ -302,7 +333,12 @@ pub unsafe extern "C" fn frost_dkg_handle_msg1(
                     );
                 }
             }
-            Err(e) => return invalid_arg(&format!("parse msg1 item: {e}")),
+            Err(e) => {
+                return invalid_arg(&format!(
+                    "parse msg1 item: {}",
+                    redact(&e)
+                ))
+            }
         }
     }
     match dkg::part2(secret, &round1_packages) {
@@ -365,7 +401,9 @@ pub unsafe extern "C" fn frost_dkg_handle_msg2(
     let msgs_str = CStr::from_ptr(msgs_json).to_string_lossy();
     let values: Vec<Value> = match serde_json::from_str(&msgs_str) {
         Ok(v) => v,
-        Err(e) => return invalid_arg(&format!("parse msgs2: {e}")),
+        Err(e) => {
+            return invalid_arg(&format!("parse msgs2: {}", redact(&e)))
+        }
     };
     if values.len() != usize::from(st.max_signers - 1) {
         return invalid_arg("unexpected number of round2 packages");
@@ -375,7 +413,12 @@ pub unsafe extern "C" fn frost_dkg_handle_msg2(
     for v in values {
         let m: Round2Msg = match parse_json_value(&v) {
             Ok(m) => m,
-            Err(e) => return invalid_arg(&format!("parse msg2 item: {e}")),
+            Err(e) => {
+                return invalid_arg(&format!(
+                    "parse msg2 item: {}",
+                    redact(&e)
+                ))
+            }
         };
         if m.to_id >= st.max_signers
             || m.to_id + 1 != st.id_raw
@@ -469,7 +512,9 @@ pub unsafe extern "C" fn frost_signing_init(
     let ks_str = CStr::from_ptr(keyshare_json).to_string_lossy();
     let ks: Keyshare = match serde_json::from_str(&ks_str) {
         Ok(k) => k,
-        Err(e) => return null_with_err(&format!("parse keyshare: {e}")),
+        Err(e) => {
+            return null_with_err(&format!("parse keyshare: {}", redact(&e)))
+        }
     };
     let id = match id_from_u16(ks.participant_id) {
         Ok(i) => i,
@@ -552,7 +597,10 @@ pub unsafe extern "C" fn frost_signing_handle_msg1(
     let values: Vec<Value> = match serde_json::from_str(&msgs_str) {
         Ok(v) => v,
         Err(e) => {
-            return invalid_arg(&format!("parse msg1 commitments: {e}"))
+            return invalid_arg(&format!(
+                "parse msg1 commitments: {}",
+                redact(&e)
+            ))
         }
     };
     #[derive(Deserialize)]
@@ -569,7 +617,10 @@ pub unsafe extern "C" fn frost_signing_handle_msg1(
         let cm: CommitIn = match parse_json_value(&v) {
             Ok(c) => c,
             Err(e) => {
-                return invalid_arg(&format!("parse commitment item: {e}"))
+                return invalid_arg(&format!(
+                    "parse commitment item: {}",
+                    redact(&e)
+                ))
             }
         };
         if let Ok(pid) = id_from_u16(cm.from) {
@@ -663,11 +714,18 @@ pub unsafe extern "C" fn frost_combine_signatures(
 
     let first: SignatureShareBundle = match serde_json::from_str(&first_str) {
         Ok(v) => v,
-        Err(e) => return invalid_arg(&format!("parse first partial: {e}")),
+        Err(e) => {
+            return invalid_arg(&format!(
+                "parse first partial: {}",
+                redact(&e)
+            ))
+        }
     };
     let vals: Vec<Value> = match serde_json::from_str(&msg_list_str) {
         Ok(v) => v,
-        Err(e) => return invalid_arg(&format!("parse msg list: {e}")),
+        Err(e) => {
+            return invalid_arg(&format!("parse msg list: {}", redact(&e)))
+        }
     };
 
     let first_id = match id_from_u16(first.participant_id) {
@@ -684,7 +742,10 @@ pub unsafe extern "C" fn frost_combine_signatures(
         let bundle: SignatureShareBundle = match parse_json_value(&v) {
             Ok(b) => b,
             Err(e) => {
-                return invalid_arg(&format!("parse partial item: {e}"))
+                return invalid_arg(&format!(
+                    "parse partial item: {}",
+                    redact(&e)
+                ))
             }
         };
         if let Ok(pid) = id_from_u16(bundle.participant_id) {
@@ -709,8 +770,8 @@ pub unsafe extern "C" fn frost_combine_signatures(
 
 /// Return `{"derived_public_key": "<hex>"}` with the group verifying key.
 ///
-/// Ed25519 derivation (SLIP-10) is not implemented: `derivation_path` is
-/// accepted for API symmetry and ignored.
+/// Ed25519 derivation (SLIP-10) is not implemented: `derivation_path` must be
+/// NULL, empty or "m"; any other path is rejected.
 ///
 /// # Safety
 ///
@@ -718,15 +779,20 @@ pub unsafe extern "C" fn frost_combine_signatures(
 #[no_mangle]
 pub unsafe extern "C" fn frost_derive_public_key(
     keyshare_json: *const c_char,
-    _derivation_path: *const c_char,
+    derivation_path: *const c_char,
 ) -> *mut c_char {
     if keyshare_json.is_null() {
         return invalid_arg("null keyshare");
     }
+    if let Err(e) = check_root_path(derivation_path) {
+        return invalid_arg(&e);
+    }
     let ks_str = CStr::from_ptr(keyshare_json).to_string_lossy();
     let ks: Keyshare = match serde_json::from_str(&ks_str) {
         Ok(k) => k,
-        Err(e) => return invalid_arg(&format!("parse keyshare: {e}")),
+        Err(e) => {
+            return invalid_arg(&format!("parse keyshare: {}", redact(&e)))
+        }
     };
 
     let pubkey = ks.pubkey_package.verifying_key();
@@ -743,8 +809,8 @@ pub unsafe extern "C" fn frost_derive_public_key(
 
 /// Return the keyshare unchanged (re-serialized).
 ///
-/// Ed25519 derivation (SLIP-10) is not implemented: `derivation_path` is
-/// accepted for API symmetry and ignored.
+/// Ed25519 derivation (SLIP-10) is not implemented: `derivation_path` must be
+/// NULL, empty or "m"; any other path is rejected.
 ///
 /// # Safety
 ///
@@ -752,15 +818,20 @@ pub unsafe extern "C" fn frost_derive_public_key(
 #[no_mangle]
 pub unsafe extern "C" fn frost_derive_keyshare(
     keyshare_json: *const c_char,
-    _derivation_path: *const c_char,
+    derivation_path: *const c_char,
 ) -> *mut c_char {
     if keyshare_json.is_null() {
         return invalid_arg("null keyshare");
     }
+    if let Err(e) = check_root_path(derivation_path) {
+        return invalid_arg(&e);
+    }
     let ks_str = CStr::from_ptr(keyshare_json).to_string_lossy();
     let ks: Keyshare = match serde_json::from_str(&ks_str) {
         Ok(k) => k,
-        Err(e) => return invalid_arg(&format!("parse keyshare: {e}")),
+        Err(e) => {
+            return invalid_arg(&format!("parse keyshare: {}", redact(&e)))
+        }
     };
     match serde_json::to_string(&ks) {
         Ok(json) => cstring_or_null(json),

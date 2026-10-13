@@ -16,13 +16,13 @@
 package frost
 
 /*
-#cgo windows LDFLAGS: -L../../internal/rust/target/x86_64-pc-windows-gnu/release -static -Wl,--allow-multiple-definition -lmpc_frost_ffi -lws2_32 -luserenv -lbcrypt -lntdll
-#cgo linux LDFLAGS: -L../../ -L../../internal/rust/target/release -lmpc_frost_ffi -lpthread -ldl -lm
-#cgo darwin,!ios LDFLAGS: -L../../ -L../../internal/rust/target/release -lmpc_frost_ffi -framework Security
-#cgo darwin,ios LDFLAGS: -L../../internal/rust/target/ios-universal -lmpc_frost_ffi -framework Security
-#cgo android,arm64 LDFLAGS: -L../../internal/rust/target/aarch64-linux-android/release -lmpc_frost_ffi -llog -ldl -lm
-#cgo android,amd64 LDFLAGS: -L../../internal/rust/target/x86_64-linux-android/release -lmpc_frost_ffi -llog -ldl -lm
-#cgo android,arm LDFLAGS: -L../../internal/rust/target/armv7-linux-androideabi/release -lmpc_frost_ffi -llog -ldl -lm
+#cgo windows LDFLAGS: -L${SRCDIR}/../../internal/rust/target/x86_64-pc-windows-gnu/release -static -Wl,--allow-multiple-definition -lmpc_frost_ffi -lws2_32 -luserenv -lbcrypt -lntdll
+#cgo linux LDFLAGS: -L${SRCDIR}/../../internal/rust/target/release -lmpc_frost_ffi -lpthread -ldl -lm
+#cgo darwin,!ios LDFLAGS: -L${SRCDIR}/../../internal/rust/target/release -lmpc_frost_ffi -framework Security
+#cgo darwin,ios LDFLAGS: -L${SRCDIR}/../../internal/rust/target/ios-universal -lmpc_frost_ffi -framework Security
+#cgo android,arm64 LDFLAGS: -L${SRCDIR}/../../internal/rust/target/aarch64-linux-android/release -lmpc_frost_ffi -llog -ldl -lm
+#cgo android,amd64 LDFLAGS: -L${SRCDIR}/../../internal/rust/target/x86_64-linux-android/release -lmpc_frost_ffi -llog -ldl -lm
+#cgo android,arm LDFLAGS: -L${SRCDIR}/../../internal/rust/target/armv7-linux-androideabi/release -lmpc_frost_ffi -llog -ldl -lm
 #include <stdlib.h>
 
 typedef void* DkgState;
@@ -345,8 +345,8 @@ func CombineSignatures(partialSigJSON string, msgList []interface{}) (string, er
 // ============ Keys ============
 
 // DerivePublicKey returns the group public key as JSON of the form
-// {"derived_public_key": "<hex>"}. Hierarchical derivation is not implemented
-// by the FFI yet, so derivationPath is currently ignored.
+// {"derived_public_key": "<hex>"}. Ed25519 child key derivation (SLIP-10) is
+// not implemented yet: derivationPath must be "m", any other path is an error.
 func DerivePublicKey(keyshareJSON, derivationPath string) (string, error) {
 	cKeyshare := C.CString(keyshareJSON)
 	defer C.free(unsafe.Pointer(cKeyshare))
@@ -355,9 +355,9 @@ func DerivePublicKey(keyshareJSON, derivationPath string) (string, error) {
 	return callString(func() *C.char { return C.frost_derive_public_key(cKeyshare, cPath) })
 }
 
-// DeriveKeyshare returns the child keyshare for derivationPath. Hierarchical
-// derivation is not implemented by the FFI yet, so the keyshare is returned
-// unchanged.
+// DeriveKeyshare returns the keyshare for derivationPath. Ed25519 child key
+// derivation (SLIP-10) is not implemented yet: only the root path "m" is
+// accepted, and any other path returns an error.
 func DeriveKeyshare(keyshareJSON, derivationPath string) (string, error) {
 	cKeyshare := C.CString(keyshareJSON)
 	defer C.free(unsafe.Pointer(cKeyshare))

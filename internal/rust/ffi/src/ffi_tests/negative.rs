@@ -95,7 +95,7 @@ fn dkg_init_with_ranks_rejects_invalid_parameters() {
         assert!(last_error().contains("party_id out of bounds"));
 
         assert!(dkls23_dkg_init_with_ranks(0, ranks.as_ptr(), 3, 1).is_null());
-        assert!(last_error().contains("max rank must be less than threshold"));
+        assert!(last_error().contains("invalid threshold"));
 
         assert!(dkls23_dkg_init_with_ranks(0, ranks.as_ptr(), 0, 2).is_null());
     }
@@ -558,4 +558,143 @@ fn ranked_signing_rejects_non_poised_signer_set() {
         let sig = sign(&signers, "m", &hash);
         assert!(verify(&pubkey, &hash, &sig), "{pair:?}");
     }
+}
+
+// -------------------- Fuzzing regressions --------------------
+
+// Inputs found by internal/rust/fuzz. Each one used to panic, which aborts
+// the host process in release builds.
+
+fn keyshares_2_of_3() -> &'static [String] {
+    static KEYSHARES: OnceLock<Vec<String>> = OnceLock::new();
+    KEYSHARES.get_or_init(|| run_dkg(&dkg_parties(3, 2)))
+}
+
+/// `keyshare` (JSON) with `edit` applied, as a string.
+fn edited(keyshare: &str, edit: impl FnOnce(&mut Value)) -> String {
+    let mut ks = json(keyshare);
+    edit(&mut ks);
+    ks.to_string()
+}
+
+fn expect_dsg_init_err(keyshare: &str, needle: &str) {
+    let (ks, path) = (cstr(keyshare), cstr("m"));
+    expect_err(
+        unsafe { dkls23_dsg_init(ks.as_ptr(), path.as_ptr()) },
+        needle,
+    );
+}
+
+#[test]
+fn dsg_init_rejects_keyshare_with_foreign_party_id() {
+    // fuzz: dkls_dsg_init. Party 0's keyshare relabelled as party 2 passed
+    // dsg_init; signing with party 1 then indexed the empty rec_seed_list
+    // (core dsg.rs: "index out of bounds: the len is 0 but the index is 1").
+    let ks = edited(&keyshares_2_of_3()[0], |ks| ks["party_id"] = json!(2));
+    expect_dsg_init_err(&ks, "rec_seed_list must have 2 entries");
+}
+
+type KeyshareEdit = fn(&mut Value);
+
+#[test]
+fn dsg_init_rejects_inconsistent_keyshares() {
+    let ks = &keyshares_2_of_3()[1];
+    let cases: [(&str, KeyshareEdit); 6] = [
+        // Scalar::from(0).invert().unwrap() in DSG state creation.
+        ("threshold or party_id", |ks| ks["threshold"] = json!(0)),
+        ("threshold or party_id", |ks| ks["party_id"] = json!(3)),
+        ("x_i_list must have 3", |ks| {
+            ks["x_i_list"].as_array_mut().unwrap().pop();
+        }),
+        ("seed_ot_senders must have 2", |ks| {
+            ks["seed_ot_senders"].as_array_mut().unwrap().pop();
+        }),
+        ("sent_seed_list must have 1", |ks| {
+            ks["sent_seed_list"] = json!([]);
+        }),
+        // A repeated evaluation point makes the Birkhoff matrix singular.
+        ("duplicate x_i_list", |ks| {
+            ks["x_i_list"][2] = ks["x_i_list"][0].clone();
+        }),
+    ];
+    for (needle, edit) in cases {
+        expect_dsg_init_err(&edited(ks, edit), needle);
+    }
+    // The unmodified keyshare still initializes.
+    dsg_init(ks, "m");
+}
+
+#[test]
+fn dkg_rounds_cannot_be_replayed_or_skipped() {
+    let parties = dkg_parties(2, 2);
+    let msg1 = dkg_round1(&parties);
+    let msg2 = dkg_round2(&parties, &msg1);
+
+    // Round 1 already ran for party 0: running it again must be refused.
+    let others = to_c(&excluding(&msg1, 0));
+    expect_err(
+        unsafe { dkls23_dkg_handle_msg1(parties[0].0, others.as_ptr()) },
+        "out of order",
+    );
+    // Round 4 before round 2 and 3 is refused too.
+    let empty = cstr("[]");
+    expect_err(
+        unsafe { dkls23_dkg_handle_msg4(parties[0].0, empty.as_ptr()) },
+        "out of order",
+    );
+
+    // The honest next round still works after the refused calls.
+    let mine = to_c(&select(&msg2, "to_id", 0));
+    ok(unsafe { dkls23_dkg_handle_msg2(parties[0].0, mine.as_ptr()) });
+}
+
+#[test]
+fn protocol_error_poisons_the_dkg_state() {
+    let parties = dkg_parties(2, 2);
+    let msg1 = dkg_round1(&parties);
+    let msg2 = dkg_round2(&parties, &msg1);
+
+    // Well-formed round-2 messages from a different session pass parsing
+    // and routing but fail inside the protocol code.
+    let foreign = dkg_parties(2, 2);
+    let foreign_msg1 = dkg_round1(&foreign);
+    let foreign_msg2 = dkg_round2(&foreign, &foreign_msg1);
+    let forged = to_c(&select(&foreign_msg2, "to_id", 0));
+    expect_err(
+        unsafe { dkls23_dkg_handle_msg2(parties[0].0, forged.as_ptr()) },
+        "Failed to handle msg2",
+    );
+
+    // The honest messages are now refused: the state may be half updated.
+    let honest = to_c(&select(&msg2, "to_id", 0));
+    expect_err(
+        unsafe { dkls23_dkg_handle_msg2(parties[0].0, honest.as_ptr()) },
+        "start a new session",
+    );
+}
+
+#[test]
+fn malformed_input_does_not_poison_the_state() {
+    let parties = dkg_parties(2, 2);
+    let msg1 = dkg_round1(&parties);
+    let garbage = cstr("not json");
+    expect_err(
+        unsafe { dkls23_dkg_handle_msg1(parties[0].0, garbage.as_ptr()) },
+        "Failed to parse msg1",
+    );
+    // A retry with the right messages succeeds.
+    let others = to_c(&excluding(&msg1, 0));
+    ok(unsafe { dkls23_dkg_handle_msg1(parties[0].0, others.as_ptr()) });
+}
+
+#[test]
+fn parse_errors_do_not_echo_input_values() {
+    let secret = "deadbeefcafebabe0123456789abcdef";
+    let keyshare = cstr(&format!(r#"{{"party_id":"{secret}"}}"#));
+    let path = cstr("m");
+    let state = unsafe { dkls23_dsg_init(keyshare.as_ptr(), path.as_ptr()) };
+    assert!(state.is_null());
+    let err = last_error();
+    assert!(err.contains("Failed to parse keyshare"), "{err}");
+    assert!(!err.contains(secret), "error leaks the input value: {err}");
 }

@@ -4,4 +4,6 @@
 
 mod common;
 mod dkg_signing;
+mod golden;
 mod negative;
+mod ranked;

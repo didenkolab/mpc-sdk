@@ -1,0 +1,45 @@
+name: Fuzz
+
+on:
+  pull_request:
+    paths: ["internal/rust/**"]
+  schedule:
+    - cron: "17 3 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  fuzz:
+    runs-on: ubuntu-latest
+    env:
+      # Short smoke run on PRs, longer on the weekly schedule.
+      SECONDS_PER_TARGET: ${{ github.event_name == 'pull_request' && '20' || '300' }}
+    defaults:
+      run:
+        working-directory: internal/rust/fuzz
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install nightly and cargo-fuzz
+        run: |
+          rustup toolchain install nightly --profile minimal
+          cargo +nightly install cargo-fuzz --locked
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: internal/rust/fuzz
+      - name: Build targets
+        run: cargo +nightly fuzz build -O -s none
+      - name: Run every target
+        run: |
+          for t in $(cargo +nightly fuzz list); do
+            mkdir -p "corpus/$t"
+            cargo +nightly fuzz run -O -s none "$t" "corpus/$t" "seeds/$t" -- \
+              -max_total_time="$SECONDS_PER_TARGET" -timeout=30 || exit 1
+          done
+      - name: Upload crash inputs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-artifacts
+          path: internal/rust/fuzz/artifacts
