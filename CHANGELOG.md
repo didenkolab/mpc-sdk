@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-10-13
+
 ### Fixed
 
 - **Tron:** `raw_data.timestamp` is now written as protobuf field 14 (was 13), so
@@ -72,5 +74,6 @@ First public release.
   they reach the protocol core, so a malicious party cannot crash other parties.
 - Presignatures and FROST nonces are single-use, even when a signing attempt fails.
 
-[Unreleased]: https://github.com/didenkolab/mpc-sdk/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/didenkolab/mpc-sdk/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/didenkolab/mpc-sdk/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/didenkolab/mpc-sdk/releases/tag/v0.1.0
